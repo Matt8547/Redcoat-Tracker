@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Redcoat Tracker</string>
+    <string name="training_currency">CAS Currency</string>
+    <string name="add_discipline">Add Discipline</string>
+    <string name="no_disciplines">No disciplines added yet. Tap + to start.</string>
+    <string name="discipline_name">Discipline Name</string>
+    <string name="six_month_expiry">6-Month Expiry:</string>
+    <string name="twelve_month_expiry">12-Month Expiry:</string>
+    <string name="date_format">Date: %1$s</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="app_version">Redcoat Currency Tracker V1.0</string>
+</resources>
