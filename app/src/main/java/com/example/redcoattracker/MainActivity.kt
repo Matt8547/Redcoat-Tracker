@@ -66,12 +66,12 @@ class MainActivity : ComponentActivity() {
 fun SplashScreen() {
     Box(modifier = Modifier.fillMaxSize()) {
         Image(
-            painter = painterResource(id = R.drawable.splash_screen),
+            painter = painterResource(id = R.drawable.redcoat_splash),
             contentDescription = null, // The image is decorative
             modifier = Modifier
                 .fillMaxSize()
                 .rotate(90f)
-                .scale(2.025f), // Reduce size by 10%
+                .scale(1.8225f), // Reduce size by 10%
             contentScale = ContentScale.Fit
         )
     }
