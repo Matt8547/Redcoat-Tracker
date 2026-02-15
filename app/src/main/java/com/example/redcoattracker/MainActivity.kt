@@ -1,5 +1,6 @@
 package com.example.redcoattracker
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,6 +19,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -35,6 +37,9 @@ import java.time.temporal.ChronoUnit
 
 // Top-level constant for the date formatter to improve performance
 private val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+private val presetDisciplines = listOf(
+    "Type 1", "Type 2", "Type 3", "BOC", "BOT", "FW Cas", "RW Cas", "Hot", "VDL", "Laser", "Rem Obs", "LLTTP", "Night", "IR", "Evaluation date"
+)
 
 class MainActivity : ComponentActivity() {
     private val db by lazy { AppDatabase.getDatabase(this) }
@@ -84,9 +89,14 @@ fun SplashScreen() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: DisciplineViewModel) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE) }
+
     // State management for the list and dialog
     val disciplineList by viewModel.allDisciplines.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf(prefs.getString("user_name", "") ?: "") }
+    var cs by remember { mutableStateOf(prefs.getString("user_cs", "") ?: "") }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.training_currency)) }) },
@@ -98,6 +108,29 @@ fun MainScreen(viewModel: DisciplineViewModel) {
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize()) { // Use a Box to allow bottom alignment
             Column(modifier = Modifier.padding(padding)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { newName ->
+                            name = newName
+                            prefs.edit().putString("user_name", newName).apply()
+                        },
+                        label = { Text("Name") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = cs,
+                        onValueChange = { newCs ->
+                            cs = newCs
+                            prefs.edit().putString("user_cs", newCs).apply()
+                        },
+                        label = { Text("C/S") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
                 if (disciplineList.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(stringResource(R.string.no_disciplines))
@@ -123,8 +156,8 @@ fun MainScreen(viewModel: DisciplineViewModel) {
         if (showDialog) {
             AddDisciplineDialog(
                 onDismiss = { showDialog = false },
-                onSave = { name, date ->
-                    viewModel.insert(name, date)
+                onSave = { disciplineName, date ->
+                    viewModel.insert(disciplineName, date)
                     showDialog = false
                 }
             )
@@ -134,11 +167,15 @@ fun MainScreen(viewModel: DisciplineViewModel) {
 
 @Composable
 fun DisciplineCard(discipline: Discipline) {
-    val sixMonthExpiry = discipline.completionDate.plusMonths(6)
-    val twelveMonthExpiry = discipline.completionDate.plusMonths(12)
     val today = LocalDate.now()
 
-    val daysUntilExpiry = ChronoUnit.DAYS.between(today, sixMonthExpiry)
+    val (expiryDate, label) = if (discipline.name == "Evaluation date") {
+        Pair(discipline.completionDate.plusMonths(18), "18 Month Expiry")
+    } else {
+        Pair(discipline.completionDate.plusMonths(6), "6 Month Expiry")
+    }
+
+    val daysUntilExpiry = ChronoUnit.DAYS.between(today, expiryDate)
 
     val cardColor = when {
         daysUntilExpiry < 0 -> Color(0xFFFFCDD2) // Expired - Light Red
@@ -157,8 +194,13 @@ fun DisciplineCard(discipline: Discipline) {
             Text(text = discipline.name, style = MaterialTheme.typography.headlineSmall, color = textColor)
             Spacer(modifier = Modifier.height(8.dp))
 
-            ExpiryRow(stringResource(R.string.six_month_expiry), sixMonthExpiry, textColor)
-            ExpiryRow(stringResource(R.string.twelve_month_expiry), twelveMonthExpiry, textColor)
+            if (discipline.name == "Evaluation date") {
+                ExpiryRow(label, expiryDate, textColor)
+            } else {
+                val twelveMonthExpiry = discipline.completionDate.plusMonths(12)
+                ExpiryRow(stringResource(R.string.six_month_expiry), expiryDate, textColor)
+                ExpiryRow(stringResource(R.string.twelve_month_expiry), twelveMonthExpiry, textColor)
+            }
         }
     }
 }
@@ -181,7 +223,8 @@ fun ExpiryRow(label: String, expiryDate: LocalDate, textColor: Color) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddDisciplineDialog(onDismiss: () -> Unit, onSave: (String, LocalDate) -> Unit) {
-    var name by remember { mutableStateOf("") }
+    var expanded by remember { mutableStateOf(false) }
+    var selectedDiscipline by remember { mutableStateOf(presetDisciplines[0]) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var showDatePicker by remember { mutableStateOf(false) }
 
@@ -212,14 +255,40 @@ fun AddDisciplineDialog(onDismiss: () -> Unit, onSave: (String, LocalDate) -> Un
         title = { Text(stringResource(R.string.add_discipline)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.discipline_name)) })
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded }
+                ) {
+                    TextField(
+                        value = selectedDiscipline,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(R.string.discipline_name)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier.menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        presetDisciplines.forEach { discipline ->
+                            DropdownMenuItem(
+                                text = { Text(discipline) },
+                                onClick = {
+                                    selectedDiscipline = discipline
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
                 Button(onClick = { showDatePicker = true }) {
                     Text(stringResource(R.string.date_format, selectedDate.format(dateFormatter)))
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { if (name.isNotBlank()) onSave(name, selectedDate) }) { Text(stringResource(R.string.save)) }
+            Button(onClick = { onSave(selectedDiscipline, selectedDate) }) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }

@@ -1,11 +1,15 @@
 package com.example.redcoattracker.data
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
 import java.time.LocalDate
 
-@Entity(tableName = "disciplines")
+@Entity(
+    tableName = "disciplines",
+    indices = [Index(value = ["name"], unique = true)]
+)
 data class Discipline(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,

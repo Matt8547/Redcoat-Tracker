@@ -16,3 +16,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "Redcoat Tracker"
 include(":app")
+
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}

@@ -31,11 +31,6 @@ android {
     compileOptions {
         // Enable core library desugaring
         isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-    kotlinOptions {
-        jvmTarget = "11"
     }
     buildFeatures {
         compose = true
@@ -47,6 +42,9 @@ android {
     }
 }
 
+kotlin {
+    jvmToolchain(11)
+}
 
 dependencies {
     // Add the desugaring library
