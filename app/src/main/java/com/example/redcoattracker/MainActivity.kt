@@ -3,6 +3,7 @@ package com.example.redcoattracker
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,7 +21,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.example.redcoattracker.data.AppDatabase
+import com.example.redcoattracker.data.Discipline
 import com.example.redcoattracker.ui.theme.RedcoatTrackerTheme
+import com.example.redcoattracker.viewmodel.DisciplineViewModel
+import com.example.redcoattracker.viewmodel.DisciplineViewModelFactory
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
@@ -31,13 +36,12 @@ import java.time.temporal.ChronoUnit
 // Top-level constant for the date formatter to improve performance
 private val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 
-// 1. Data Model
-data class Discipline(
-    val name: String,
-    val completionDate: LocalDate
-)
-
 class MainActivity : ComponentActivity() {
+    private val db by lazy { AppDatabase.getDatabase(this) }
+    private val viewModel: DisciplineViewModel by viewModels {
+        DisciplineViewModelFactory(db.disciplineDao())
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -54,7 +58,7 @@ class MainActivity : ComponentActivity() {
                     SplashScreen()
                 } else {
                     Surface(color = MaterialTheme.colorScheme.background) {
-                        MainScreen()
+                        MainScreen(viewModel)
                     }
                 }
             }
@@ -79,9 +83,9 @@ fun SplashScreen() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen() {
+fun MainScreen(viewModel: DisciplineViewModel) {
     // State management for the list and dialog
-    val disciplineList = remember { mutableStateListOf<Discipline>() }
+    val disciplineList by viewModel.allDisciplines.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -120,7 +124,7 @@ fun MainScreen() {
             AddDisciplineDialog(
                 onDismiss = { showDialog = false },
                 onSave = { name, date ->
-                    disciplineList.add(Discipline(name, date))
+                    viewModel.insert(name, date)
                     showDialog = false
                 }
             )
