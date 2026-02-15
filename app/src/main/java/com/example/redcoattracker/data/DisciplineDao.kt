@@ -13,4 +13,7 @@ interface DisciplineDao {
 
     @Query("SELECT * FROM disciplines ORDER BY CASE WHEN name = 'Evaluation date' THEN 0 ELSE 1 END, completionDate DESC")
     fun getAllDisciplines(): Flow<List<Discipline>>
+
+    @Query("SELECT * FROM disciplines")
+    fun getAllDisciplinesList(): List<Discipline>
 }
