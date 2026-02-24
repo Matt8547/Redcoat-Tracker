@@ -3,15 +3,18 @@ package com.example.redcoattracker
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -58,12 +61,18 @@ class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
+    ) { _: Boolean ->
         // Handle the permission result if needed
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Play startup sound
+        MediaPlayer.create(this, R.raw.startup_sound).apply {
+            setOnCompletionListener { it.release() }
+            start()
+        }
 
         setContent {
             var showSplash by remember { mutableStateOf(true) }
@@ -112,7 +121,7 @@ fun SplashScreen() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun MainScreen(viewModel: DisciplineViewModel) {
     val context = LocalContext.current
@@ -121,7 +130,8 @@ fun MainScreen(viewModel: DisciplineViewModel) {
     // State management for the list and dialog
     val disciplineList by viewModel.allDisciplines.collectAsState()
     val jtacStatus by viewModel.jtacStatus.collectAsState()
-    var showDialog by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var editingDiscipline by remember { mutableStateOf<Discipline?>(null) }
     var name by remember { mutableStateOf(prefs.getString("user_name", "") ?: "") }
     var cs by remember { mutableStateOf(prefs.getString("user_cs", "") ?: "") }
 
@@ -139,7 +149,7 @@ fun MainScreen(viewModel: DisciplineViewModel) {
             containerColor = Color.Transparent, // Make Scaffold background transparent
             topBar = { TopAppBar(title = { Text(stringResource(R.string.training_currency)) }) },
             floatingActionButton = {
-                FloatingActionButton(onClick = { showDialog = true }) {
+                FloatingActionButton(onClick = { showAddDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_discipline))
                 }
             }
@@ -194,7 +204,9 @@ fun MainScreen(viewModel: DisciplineViewModel) {
                     } else {
                         LazyColumn {
                             items(disciplineList) { item ->
-                                DisciplineCard(item)
+                                DisciplineCard(item) {
+                                    editingDiscipline = item
+                                }
                             }
                         }
                     }
@@ -209,14 +221,25 @@ fun MainScreen(viewModel: DisciplineViewModel) {
                 )
             }
 
-            if (showDialog) {
+            if (showAddDialog) {
                 AddDisciplineDialog(
-                    onDismiss = { showDialog = false },
+                    onDismiss = { showAddDialog = false },
                     onSave = { disciplineNames, date ->
                         disciplineNames.forEach { disciplineName ->
                             viewModel.insert(disciplineName, date)
                         }
-                        showDialog = false
+                        showAddDialog = false
+                    }
+                )
+            }
+
+            editingDiscipline?.let { discipline ->
+                EditDisciplineDialog(
+                    discipline = discipline,
+                    onDismiss = { editingDiscipline = null },
+                    onSave = { updatedDiscipline ->
+                        viewModel.insert(updatedDiscipline.name, updatedDiscipline.completionDate)
+                        editingDiscipline = null
                     }
                 )
             }
@@ -224,8 +247,9 @@ fun MainScreen(viewModel: DisciplineViewModel) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun DisciplineCard(discipline: Discipline) {
+fun DisciplineCard(discipline: Discipline, onLongPress: (Discipline) -> Unit) {
     val today = LocalDate.now()
 
     val (expiryDate, label) = if (discipline.name == "Evaluation date") {
@@ -246,7 +270,11 @@ fun DisciplineCard(discipline: Discipline) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
+            .padding(8.dp)
+            .combinedClickable(
+                onClick = {},
+                onLongClick = { onLongPress(discipline) }
+            ),
         colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -353,6 +381,55 @@ fun AddDisciplineDialog(onDismiss: () -> Unit, onSave: (List<String>, LocalDate)
         },
         confirmButton = {
             Button(onClick = { if (selectedDisciplines.isNotEmpty()) onSave(selectedDisciplines.toList(), selectedDate) }) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditDisciplineDialog(discipline: Discipline, onDismiss: () -> Unit, onSave: (Discipline) -> Unit) {
+    var selectedDate by remember { mutableStateOf(discipline.completionDate) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        selectedDate = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
+                    }
+                    showDatePicker = false
+                }) { Text(stringResource(R.string.ok)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit ${discipline.name}") },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(text = "Current Date: ${discipline.completionDate.format(dateFormatter)}")
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = { showDatePicker = true }) {
+                    Text(stringResource(R.string.date_format, selectedDate.format(dateFormatter)))
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(discipline.copy(completionDate = selectedDate)) }) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
