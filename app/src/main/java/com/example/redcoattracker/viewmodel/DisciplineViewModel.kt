@@ -51,4 +51,8 @@ class DisciplineViewModel(private val disciplineDao: DisciplineDao) : ViewModel(
             disciplineDao.insert(Discipline(name = name, completionDate = completionDate))
         }
     }
+
+    suspend fun getDisciplinesInRange(startDate: LocalDate, endDate: LocalDate): List<Discipline> {
+        return disciplineDao.getDisciplinesInRange(startDate, endDate)
+    }
 }

@@ -6,6 +6,10 @@ import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,7 +45,10 @@ import com.example.redcoattracker.ui.theme.RedcoatTrackerTheme
 import com.example.redcoattracker.viewmodel.DisciplineViewModel
 import com.example.redcoattracker.viewmodel.DisciplineViewModelFactory
 import com.example.redcoattracker.viewmodel.JtacStatus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -61,14 +69,11 @@ class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { _: Boolean ->
-        // Handle the permission result if needed
-    }
+    ) { _: Boolean -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Play startup sound
         MediaPlayer.create(this, R.raw.startup_sound).apply {
             setOnCompletionListener { it.release() }
             start()
@@ -111,11 +116,11 @@ fun SplashScreen() {
     Box(modifier = Modifier.fillMaxSize()) {
         Image(
             painter = painterResource(id = R.drawable.redcoat_splash),
-            contentDescription = null, // The image is decorative
+            contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()
                 .rotate(90f)
-                .scale(1.8225f), // Reduce size by 10%
+                .scale(1.8225f),
             contentScale = ContentScale.Fit
         )
     }
@@ -127,10 +132,10 @@ fun MainScreen(viewModel: DisciplineViewModel) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE) }
 
-    // State management for the list and dialog
     val disciplineList by viewModel.allDisciplines.collectAsState()
     val jtacStatus by viewModel.jtacStatus.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    var showPrintDialog by remember { mutableStateOf(false) }
     var editingDiscipline by remember { mutableStateOf<Discipline?>(null) }
     var name by remember { mutableStateOf(prefs.getString("user_name", "") ?: "") }
     var cs by remember { mutableStateOf(prefs.getString("user_cs", "") ?: "") }
@@ -141,20 +146,29 @@ fun MainScreen(viewModel: DisciplineViewModel) {
             contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()
-                .alpha(0.5f), // Increased alpha for better visibility
+                .alpha(0.5f),
             contentScale = ContentScale.Crop
         )
 
         Scaffold(
-            containerColor = Color.Transparent, // Make Scaffold background transparent
-            topBar = { TopAppBar(title = { Text(stringResource(R.string.training_currency)) }) },
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.training_currency)) },
+                    actions = {
+                        IconButton(onClick = { showPrintDialog = true }) {
+                            Icon(Icons.Default.Print, contentDescription = "Print Report")
+                        }
+                    }
+                )
+            },
             floatingActionButton = {
                 FloatingActionButton(onClick = { showAddDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_discipline))
                 }
             }
         ) { padding ->
-            Box(modifier = Modifier.fillMaxSize()) { // Use a Box to allow bottom alignment
+            Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.padding(padding)) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -233,6 +247,15 @@ fun MainScreen(viewModel: DisciplineViewModel) {
                 )
             }
 
+            if (showPrintDialog) {
+                PrintReportDialog(
+                    viewModel = viewModel,
+                    userName = name,
+                    userCs = cs,
+                    onDismiss = { showPrintDialog = false }
+                )
+            }
+
             editingDiscipline?.let { discipline ->
                 EditDisciplineDialog(
                     discipline = discipline,
@@ -247,7 +270,133 @@ fun MainScreen(viewModel: DisciplineViewModel) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun PrintReportDialog(
+    viewModel: DisciplineViewModel,
+    userName: String,
+    userCs: String,
+    onDismiss: () -> Unit
+) {
+    var startDate by remember { mutableStateOf(LocalDate.now().minusMonths(6)) }
+    var endDate by remember { mutableStateOf(LocalDate.now()) }
+    var showStartDatePicker by remember { mutableStateOf(false) }
+    var showEndDatePicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    if (showStartDatePicker) {
+        DatePickerModal(
+            initialDate = startDate,
+            onDismiss = { showStartDatePicker = false },
+            onDateSelected = { startDate = it }
+        )
+    }
+
+    if (showEndDatePicker) {
+        DatePickerModal(
+            initialDate = endDate,
+            onDismiss = { showEndDatePicker = false },
+            onDateSelected = { endDate = it }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Print Training Report") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Select Date Range:")
+                Button(onClick = { showStartDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("From: ${startDate.format(dateFormatter)}")
+                }
+                Button(onClick = { showEndDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("To: ${endDate.format(dateFormatter)}")
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                CoroutineScope(Dispatchers.Main).launch {
+                    val list = viewModel.getDisciplinesInRange(startDate, endDate)
+                    generateAndPrintReport(context, list, startDate, endDate, userName, userCs)
+                    onDismiss()
+                }
+            }) { Text("Print") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DatePickerModal(initialDate: LocalDate, onDismiss: () -> Unit, onDateSelected: (LocalDate) -> Unit) {
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = initialDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                datePickerState.selectedDateMillis?.let { millis ->
+                    onDateSelected(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate())
+                }
+                onDismiss()
+            }) { Text(stringResource(R.string.ok)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    ) {
+        DatePicker(state = datePickerState)
+    }
+}
+
+fun generateAndPrintReport(
+    context: Context,
+    disciplines: List<Discipline>,
+    start: LocalDate,
+    end: LocalDate,
+    name: String,
+    cs: String
+) {
+    val counts = disciplines.groupingBy { it.name }.eachCount()
+    
+    val html = StringBuilder().apply {
+        append("<html><body>")
+        append("<h1>Training Currency Report</h1>")
+        append("<p><b>Name:</b> $name | <b>C/S:</b> $cs</p>")
+        append("<p><b>Period:</b> ${start.format(dateFormatter)} to ${end.format(dateFormatter)}</p>")
+        
+        append("<h2>Summary</h2><ul>")
+        presetDisciplines.forEach { disciplineName ->
+            val count = counts[disciplineName] ?: 0
+            append("<li>$disciplineName: $count</li>")
+        }
+        append("</ul>")
+
+        append("<h2>Activity Log</h2>")
+        append("<table border='1' width='100%' style='border-collapse: collapse;'>")
+        append("<tr><th>Date</th><th>Discipline</th></tr>")
+        disciplines.forEach {
+            append("<tr><td>${it.completionDate.format(dateFormatter)}</td><td>${it.name}</td></tr>")
+        }
+        append("</table>")
+        append("</body></html>")
+    }.toString()
+
+    val webView = WebView(context)
+    webView.webViewClient = object : WebViewClient() {
+        override fun onPageFinished(view: WebView?, url: String?) {
+            val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+            val jobName = "RedcoatTracker_Report_${LocalDate.now()}"
+            val printAdapter = webView.createPrintDocumentAdapter(jobName)
+            printManager.print(jobName, printAdapter, PrintAttributes.Builder().build())
+        }
+    }
+    webView.loadDataWithBaseURL(null, html, "text/HTML", "UTF-8", null)
+}
+
 @Composable
 fun DisciplineCard(discipline: Discipline, onLongPress: (Discipline) -> Unit) {
     val today = LocalDate.now()
@@ -261,9 +410,9 @@ fun DisciplineCard(discipline: Discipline, onLongPress: (Discipline) -> Unit) {
     val daysUntilExpiry = ChronoUnit.DAYS.between(today, expiryDate)
 
     val cardColor = when {
-        daysUntilExpiry < 0 -> Color(0xFFFFCDD2) // Expired - Light Red
-        daysUntilExpiry <= 30 -> Color(0xFFFFECB3) // Expires soon - Light Amber
-        else -> Color(0xFFC8E6C9) // In date - Light Green
+        daysUntilExpiry < 0 -> Color(0xFFFFCDD2)
+        daysUntilExpiry <= 30 -> Color(0xFFFFECB3)
+        else -> Color(0xFFC8E6C9)
     }
     val textColor = Color.Black
 
@@ -315,25 +464,11 @@ fun AddDisciplineDialog(onDismiss: () -> Unit, onSave: (List<String>, LocalDate)
     var showDatePicker by remember { mutableStateOf(false) }
 
     if (showDatePicker) {
-        val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        DatePickerModal(
+            initialDate = selectedDate,
+            onDismiss = { showDatePicker = false },
+            onDateSelected = { selectedDate = it }
         )
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        selectedDate = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
-                    }
-                    showDatePicker = false
-                }) { Text(stringResource(R.string.ok)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.cancel)) }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
     }
 
     AlertDialog(
@@ -346,14 +481,14 @@ fun AddDisciplineDialog(onDismiss: () -> Unit, onSave: (List<String>, LocalDate)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn(
-                    modifier = Modifier.height(200.dp) // Set a fixed height for the list
+                    modifier = Modifier.height(200.dp)
                 ) {
                     items(presetDisciplines) { discipline ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { // Toggle selection
+                                .clickable {
                                     if (selectedDisciplines.contains(discipline)) {
                                         selectedDisciplines.remove(discipline)
                                     } else {
@@ -395,25 +530,11 @@ fun EditDisciplineDialog(discipline: Discipline, onDismiss: () -> Unit, onSave: 
     var showDatePicker by remember { mutableStateOf(false) }
 
     if (showDatePicker) {
-        val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        DatePickerModal(
+            initialDate = selectedDate,
+            onDismiss = { showDatePicker = false },
+            onDateSelected = { selectedDate = it }
         )
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        selectedDate = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
-                    }
-                    showDatePicker = false
-                }) { Text(stringResource(R.string.ok)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.cancel)) }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
     }
 
     AlertDialog(

@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
 
 @Dao
 interface DisciplineDao {
@@ -16,4 +17,7 @@ interface DisciplineDao {
 
     @Query("SELECT * FROM disciplines")
     fun getAllDisciplinesList(): List<Discipline>
+
+    @Query("SELECT * FROM disciplines WHERE completionDate BETWEEN :startDate AND :endDate ORDER BY completionDate DESC")
+    suspend fun getDisciplinesInRange(startDate: LocalDate, endDate: LocalDate): List<Discipline>
 }
