@@ -29,7 +29,7 @@ class DisciplineViewModel(private val disciplineDao: DisciplineDao) : ViewModel(
         val otherDisciplines = it.filter { d -> d.name != "Evaluation date" }
 
         val requiredDisciplines = listOf(
-            "Type 1", "Type 2", "Type 3", "BOC", "BOT", "FW Cas", "RW Cas", "Hot", "VDL", "Laser", "Rem Obs", "LLTTP", "Night", "IR"
+            "Type 1", "Type 2", "Type 3", "BOC", "BOT", "FW Cas", "RW Cas", "Hot", "VDL", "Laser", "Rem Obs", "LLTTP", "Night", "IR", "PSS-SOF"
         )
 
         if (evaluation == null || ChronoUnit.MONTHS.between(evaluation.completionDate, today) >= 18) {

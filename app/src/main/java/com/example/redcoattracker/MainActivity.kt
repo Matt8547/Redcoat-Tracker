@@ -58,7 +58,7 @@ import java.time.temporal.ChronoUnit
 // Top-level constant for the date formatter to improve performance
 private val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 private val presetDisciplines = listOf(
-    "Type 1", "Type 2", "Type 3", "BOC", "BOT", "FW Cas", "RW Cas", "Hot", "VDL", "Laser", "Rem Obs", "LLTTP", "Night", "IR", "Evaluation date"
+    "Type 1", "Type 2", "Type 3", "BOC", "BOT", "FW Cas", "RW Cas", "Hot", "VDL", "Laser", "Rem Obs", "LLTTP", "Night", "IR", "PSS-SOF", "Evaluation date"
 )
 
 class MainActivity : ComponentActivity() {
